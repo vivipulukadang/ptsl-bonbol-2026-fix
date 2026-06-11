@@ -395,15 +395,21 @@ export default function BuatST() {
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const jenisInfo = JENIS_ST.find(j => j.value === f.jenis) || JENIS_ST[0];
 
-  // Saat desa dipilih + evidence ada → auto-fill bulk
+  // Saat BULK dipilih → auto-fill tanggal & desa DARI BULK ITU (bukan agregat desa).
+  // Tiap bulk = 1 ST, punya tgl mulai & tgl pengumuman sendiri. Patokan validasi
+  // tanggal ST mengikuti tgl mulai bulk terpilih, bukan bulk paling awal desa.
   useEffect(() => {
-    if (!f.id_desa || !evidenceParsed) return;
-    const desaStat = evidenceParsed.desaStats[f.id_desa.toUpperCase()];
-    if (!desaStat) return;
-    set('tgl_mulai', desaStat.tglMulaiAwal || '');
-    set('tgl_pengumuman', desaStat.tglPengumumanAwal || '');
-    set('tgl_st_list', []);
-  }, [f.id_desa, evidenceParsed]);
+    if (f.bulk_index == null || !evidenceParsed) return;
+    const bulk = evidenceParsed.bulkGroups[f.bulk_index];
+    if (!bulk) return;
+    setF(p => ({
+      ...p,
+      id_desa: bulk.desa,
+      tgl_mulai: bulk.tglMulai || '',
+      tgl_pengumuman: bulk.tglPengumuman || '',
+      tgl_st_list: [],
+    }));
+  }, [f.bulk_index, evidenceParsed]);
 
   // Auto-set SK dari tahapan
   useEffect(() => {
@@ -423,23 +429,21 @@ export default function BuatST() {
     [f.id_sk_dasar, f.id_desa, f.jenis]
   );
 
-  // Desa options — dari evidence jika ada, fallback dari master
-  const desaOptions = useMemo(() => {
-    if (evidenceParsed) {
-      return Object.values(evidenceParsed.desaStats).map(d => ({
-        value: d.desa,
-        label: `${d.desa} (${d.kecamatan}) — ${d.jumlahBidang} bidang`,
-      }));
-    }
-    return [];
+  // Bulk options — tiap bulk = 1 ST (desa + tgl mulai + tgl pengumuman spesifik)
+  const bulkOptions = useMemo(() => {
+    if (!evidenceParsed) return [];
+    return evidenceParsed.bulkGroups.map((b, i) => ({
+      value: i,
+      label: `${b.desa} — mulai ${b.tglMulai}${b.tglPengumuman ? ` \u2192 ${b.tglPengumuman}` : ''} (${b.bidangList.length} bidang)`,
+    }));
   }, [evidenceParsed]);
 
-  // Jumlah bidang desa terpilih dari evidence
+  // Jumlah bidang dari BULK terpilih
   const jumlahBidang = useMemo(() => {
-    if (!f.id_desa || !evidenceParsed) return 0;
-    const d = evidenceParsed.desaStats[f.id_desa.toUpperCase()];
-    return d ? d.jumlahBidang : 0;
-  }, [f.id_desa, evidenceParsed]);
+    if (f.bulk_index == null || !evidenceParsed) return 0;
+    const b = evidenceParsed.bulkGroups[f.bulk_index];
+    return b ? b.bidangList.length : 0;
+  }, [f.bulk_index, evidenceParsed]);
 
   // Kades dari evidence
   const kadesSelected = useMemo(() => {
@@ -468,7 +472,7 @@ export default function BuatST() {
     setError(null);
     if (!f.id_tahapan)  { setError('Pilih tahapan pencairan.'); return; }
     if (!f.id_sk_dasar) { setError('Pilih SK dasar.'); return; }
-    if (!f.id_desa)     { setError('Pilih desa.'); return; }
+    if (f.bulk_index == null && !f.id_desa) { setError('Pilih bulk dari Evidence.'); return; }
     if (!f.tgl_mulai)   { setError('Tanggal mulai belum terisi. Upload Evidence PTSL atau isi manual.'); return; }
     if (f.tgl_st_list.length === 0) { setError('Pilih tanggal ST di kalender.'); return; }
     if (jenisInfo.butuhPetugas && f.petugas_ids.length === 0) { setError('Pilih minimal satu petugas BPN.'); return; }
@@ -512,7 +516,8 @@ export default function BuatST() {
         Tanggal_ST: f.tgl_st_list[0],
         tglSTList: f.tgl_st_list,
         namaDesa: f.id_desa,
-        kecamatan: evidenceParsed?.desaStats?.[f.id_desa.toUpperCase()]?.kecamatan || '',
+        kecamatan: evidenceParsed?.bulkGroups?.[f.bulk_index]?.kecamatan
+          || evidenceParsed?.desaStats?.[f.id_desa.toUpperCase()]?.kecamatan || '',
         jumlahBidang,
         namaKades: kadesSelected,
         jabatanKades: `Kepala Desa ${f.id_desa}`,
@@ -573,10 +578,7 @@ export default function BuatST() {
           <UploadEvidencePanel
             onParsed={(result) => {
               setEvidenceParsed(result);
-              set('id_desa', '');
-              set('tgl_mulai', '');
-              set('tgl_pengumuman', '');
-              set('tgl_st_list', []);
+              setF(p => ({ ...p, bulk_index: null, id_desa: '', tgl_mulai: '', tgl_pengumuman: '', tgl_st_list: [] }));
             }}
             parsedResult={evidenceParsed}
           />
@@ -642,11 +644,11 @@ export default function BuatST() {
             ) : (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Desa * (dari Evidence)</label>
-                  <SearchableDropdown options={desaOptions} value={f.id_desa}
-                    onChange={v => { set('id_desa', v); set('tgl_st_list', []); }}
-                    placeholder="— Pilih Desa —" />
-                  <p className="text-xs text-gray-400 mt-1">{desaOptions.length} desa di Evidence ini</p>
+                  <label className="label">Bulk * (dari Evidence)</label>
+                  <SearchableDropdown options={bulkOptions} value={f.bulk_index}
+                    onChange={v => { set('bulk_index', v); set('tgl_st_list', []); }}
+                    placeholder="— Pilih Bulk —" />
+                  <p className="text-xs text-gray-400 mt-1">{bulkOptions.length} bulk di Evidence ini</p>
                 </div>
                 <div>
                   <label className="label">Jumlah Bidang</label>
