@@ -43,9 +43,21 @@ export default function Dashboard() {
 
   const skAktif = (sk.data || []).find(s => s.Status === 'Aktif');
 
-  // Data progres — tahap 1 sudah selesai manual: 22 bidang
+  // Target & progres per tahapan — dihitung manual dari file Evidence_PTSL_Tahap_XX
+  // (bukan dari backend, karena tahapan 1-3 diproses sebelum/di luar tracking
+  // otomatis aplikasi ini). Update angka ini tiap kali ada tahapan baru yang
+  // selesai ST-nya. Sumber (2026-10-19): sheet breakdown per bulk pada tiap
+  // file Evidence, dihitung dari baris yang kolom "Surat Tugas"-nya terisi.
   const TARGET_TOTAL = 500;
-  const SELESAI_TAHAP1 = 22;
+  const TAHAPAN_SELESAI = [
+    { tahap: 'Tahap 1', bidang: 44 },
+    { tahap: 'Tahap 2', bidang: 141 },
+    // Tahap 3: 150 bidang di evidence, tapi 1 bidang belum ada Nomor ST
+    // (kolom "Surat Tugas" kosong di TAHAP_03) — dihitung sebagai belum
+    // selesai sampai nomor ST-nya dikonfirmasi.
+    { tahap: 'Tahap 3', bidang: 149, catatan: '1 bidang lagi belum ada Nomor ST' },
+  ];
+  const SELESAI_TOTAL = TAHAPAN_SELESAI.reduce((sum, t) => sum + t.bidang, 0);
 
   // Hitung tahapan yang sudah selesai dari master tahapan
   const tahapanSelesai = (tahapan.data || []).filter(t =>
@@ -63,22 +75,31 @@ export default function Dashboard() {
       {/* Progress Tahapan Pencairan */}
       <div className="card mb-5">
         <h2 className="font-semibold text-navy mb-4">Progres Tahapan Pencairan</h2>
-        <ProgressBar value={SELESAI_TAHAP1} max={TARGET_TOTAL} label="Total Bidang Siap Pencairan" />
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Tahap 1</p>
-            <p className="text-2xl font-bold text-green-700">{SELESAI_TAHAP1}</p>
-            <p className="text-xs text-green-600">bidang — Eviden selesai</p>
-          </div>
+        <ProgressBar value={SELESAI_TOTAL} max={TARGET_TOTAL} label="Total Bidang Siap Pencairan" />
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {TAHAPAN_SELESAI.map(t => (
+            <div key={t.tahap} className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">{t.tahap}</p>
+              <p className="text-2xl font-bold text-green-700">{t.bidang}</p>
+              <p className="text-xs text-green-600">bidang — ST terbit</p>
+            </div>
+          ))}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Sisa Target</p>
-            <p className="text-2xl font-bold text-blue-700">{TARGET_TOTAL - SELESAI_TAHAP1}</p>
+            <p className="text-2xl font-bold text-blue-700">{TARGET_TOTAL - SELESAI_TOTAL}</p>
             <p className="text-xs text-blue-600">bidang lagi</p>
           </div>
         </div>
+        {TAHAPAN_SELESAI.some(t => t.catatan) && (
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            {TAHAPAN_SELESAI.filter(t => t.catatan).map(t => (
+              <p key={t.tahap}>⚠ {t.tahap}: {t.catatan}</p>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-gray-400 mt-3">
           Target PTSL Bone Bolango 2026: {TARGET_TOTAL} bidang.
-          Tahap 1 diselesaikan manual sebelum aplikasi ini dibuat.
+          Tahap 1-3 sudah selesai diproses (eviden, BA, ST) di luar tracking otomatis aplikasi ini — angka di atas dihitung manual dari file Evidence_PTSL_Tahap_XX, bukan dari master data backend. Tahap 4 (188 bidang) sedang berjalan.
         </p>
       </div>
 

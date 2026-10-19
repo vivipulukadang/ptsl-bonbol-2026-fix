@@ -146,6 +146,38 @@ export default function BuatEviden() {
             <Stat label="Duplikat dilewati" value={stats.duplikatDilewati} />
             <Stat label="Sheet sumber" value={stats.sumberSheet} />
           </div>
+
+          {stats.breakdown && stats.breakdown.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Breakdown per bulk ({stats.breakdown.length} sheet tambahan, siap diisi Surat Tugas)
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-1.5 px-2 text-gray-500">Sheet</th>
+                      <th className="text-left py-1.5 px-2 text-gray-500">Desa</th>
+                      <th className="text-left py-1.5 px-2 text-gray-500">Tgl Mulai</th>
+                      <th className="text-left py-1.5 px-2 text-gray-500">Tgl Pengumuman</th>
+                      <th className="text-left py-1.5 px-2 text-gray-500">Bidang</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.breakdown.map((b) => (
+                      <tr key={b.sheet} className="border-b border-gray-50">
+                        <td className="py-1.5 px-2 font-mono">{b.sheet}</td>
+                        <td className="py-1.5 px-2">{b.desa}</td>
+                        <td className="py-1.5 px-2 text-gray-500">{b.tglMulai}</td>
+                        <td className="py-1.5 px-2 text-gray-500">{b.tglPengumuman || '—'}</td>
+                        <td className="py-1.5 px-2 font-semibold">{b.jumlah}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

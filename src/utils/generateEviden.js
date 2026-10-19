@@ -284,6 +284,67 @@ function buildSheet(records) {
   return ws;
 }
 
+// ---- breakdown per bulk (= per calon ST) -----------------------------------
+// Dikelompokkan persis dengan kunci bulk yang dipakai parseEvidence.js /
+// halaman Buat ST: Desa + Tanggal Mulai + Tgl DI201B (tanggal pengumuman).
+// Supaya sheet breakdown ini selalu cocok dengan bulk yang akan muncul saat
+// file Eviden diupload ke Buat ST.
+const IDX_DESA       = COLUMNS.findIndex((c) => c.src === 'desa');
+const IDX_TGL_MULAI  = COLUMNS.findIndex((c) => c.src === 'tanggalmulai');
+const IDX_TGL_DI201B = COLUMNS.findIndex((c) => c.src === 'tgldi201b');
+
+function isoFromDate(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${da}`;
+}
+
+function safeSheetName(name) {
+  // Excel: maks 31 char, tanpa \ / ? * [ ] :
+  return String(name).replace(/[\\/?*[\]:]/g, '-').substring(0, 31).trim() || 'Bulk';
+}
+
+function groupBulks(records) {
+  const groupMap = {};
+  records.forEach((rec) => {
+    const desa = rec[IDX_DESA];
+    const tglMulai = isoFromDate(rec[IDX_TGL_MULAI]);
+    if (!desa || !tglMulai) return; // sama seperti parseEvidence.js: butuh desa + tanggal mulai
+    const tglPengumuman = isoFromDate(rec[IDX_TGL_DI201B]);
+    const key = `${desa}||${tglMulai}||${tglPengumuman || ''}`;
+    if (!groupMap[key]) groupMap[key] = { desa, tglMulai, tglPengumuman, records: [] };
+    groupMap[key].records.push(rec);
+  });
+  return Object.values(groupMap).sort((a, b) =>
+    a.desa !== b.desa ? a.desa.localeCompare(b.desa) : a.tglMulai.localeCompare(b.tglMulai));
+}
+
+// Tambahkan satu sheet per bulk ke workbook (dipakai setelah SEMUA_K1 + TAHAP_XX).
+// Mengembalikan ringkasan untuk ditampilkan di UI.
+function appendBulkSheets(wb, tahapRows) {
+  const bulks = groupBulks(tahapRows);
+  const usedNames = new Set();
+  const ringkasan = [];
+  bulks.forEach((b) => {
+    let base = safeSheetName(`${b.desa}_${b.records.length}`);
+    let name = base;
+    let n = 2;
+    while (usedNames.has(name)) {
+      name = safeSheetName(`${base}_${n}`);
+      n++;
+    }
+    usedNames.add(name);
+    XLSX.utils.book_append_sheet(wb, buildSheet(b.records), name);
+    ringkasan.push({
+      sheet: name, desa: b.desa, tglMulai: b.tglMulai,
+      tglPengumuman: b.tglPengumuman, jumlah: b.records.length,
+    });
+  });
+  return ringkasan;
+}
+
 // ---- API utama -------------------------------------------------------------
 export async function generateEviden({
   sourceFile,
@@ -340,6 +401,7 @@ export async function generateEviden({
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, buildSheet(semua), 'SEMUA_K1');
   XLSX.utils.book_append_sheet(wb, buildSheet(tahapRows), `TAHAP_${tahapStr}`);
+  const breakdown = appendBulkSheets(wb, tahapRows);
 
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true });
   const filename = `Evidence_PTSL_Tahap_${tahapStr}.xlsx`;
@@ -354,6 +416,7 @@ export async function generateEviden({
     excludedPrev: prevSet.size,
     anomali: anomaliSet.size,
     duplikatDilewati: dupCount,
+    breakdown,
   };
 
   return { blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename, stats };
