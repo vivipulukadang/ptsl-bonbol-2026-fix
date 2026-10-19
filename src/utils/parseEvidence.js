@@ -52,6 +52,36 @@ function toDateStr(val) {
   return null;
 }
 
+// Normalisasi nama header supaya cocok apapun variasi kapitalisasi/spasi-nya:
+// 'Tanggal mulai' (export KKP mentah) maupun 'Tanggal Mulai' (hasil Buat Eviden)
+// harus dibaca sebagai kolom yang sama. Sama persis dengan norm() di generateEviden.js.
+function normHeader(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).trim().toLowerCase().replace(/ /g, '').replace(/\./g, '').replace(/_/g, '');
+}
+
+// Bangun peta normalized-header -> header asli dari satu baris contoh
+// (sheet_to_json dengan defval:null memastikan tiap row punya semua key yang sama).
+function buildHeaderMap(sampleRow) {
+  const map = {};
+  Object.keys(sampleRow || {}).forEach((k) => {
+    const n = normHeader(k);
+    if (n && !(n in map)) map[n] = k;
+  });
+  return map;
+}
+
+// Ambil nilai kolom dari row berdasarkan beberapa kemungkinan nama (dicek via
+// normalized header map), supaya 'Nomor berkas'/'Nomor Berkas', 'Nik'/'NIK', dst
+// semuanya terbaca sama.
+function getCol(row, hmap, ...candidates) {
+  for (const c of candidates) {
+    const key = hmap[normHeader(c)];
+    if (key !== undefined && row[key] !== undefined) return row[key];
+  }
+  return undefined;
+}
+
 export async function parseEvidenceFile(file, subMenu = 'SUDAH_K1') {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -62,19 +92,33 @@ export async function parseEvidenceFile(file, subMenu = 'SUDAH_K1') {
         // raw: true agar Date tetap sebagai Date object, bukan string
         const wb = XLSX.read(data, { type: 'array', cellDates: true, raw: true });
 
-        // Cari sheet yang punya kolom 'Tanggal mulai'
+        // Cari sheet yang punya kolom tanggal mulai / DI208 (normalized, case-insensitive).
+        // Kalau ada sheet "TAHAP_xx" yang cocok, utamakan itu (baris baru tahap ini saja),
+        // daripada "SEMUA_K1" yang isinya akumulasi semua tahap dari awal — supaya tidak
+        // membuat ST ganda untuk bidang yang sudah selesai di tahap sebelumnya.
         let targetSheet = null;
         let targetRows  = [];
+        let fallbackSheet = null;
+        let fallbackRows  = [];
 
         for (const sname of wb.SheetNames) {
           const ws   = wb.Sheets[sname];
           // sheet_to_json dengan raw:true agar nilai angka/date tidak dikonversi
           const rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
-          if (rows.length > 0 && ('Tanggal mulai' in rows[0] || 'DI208' in rows[0])) {
+          if (rows.length === 0) continue;
+          const hmap = buildHeaderMap(rows[0]);
+          const hasMatch = ('tanggalmulai' in hmap) || ('di208' in hmap);
+          if (!hasMatch) continue;
+          if (!fallbackSheet) { fallbackSheet = sname; fallbackRows = rows; }
+          if (/^tahap[_\s]?\d+$/i.test(sname.trim())) {
             targetSheet = sname;
             targetRows  = rows;
             break;
           }
+        }
+        if (!targetSheet && fallbackSheet) {
+          targetSheet = fallbackSheet;
+          targetRows  = fallbackRows;
         }
 
         if (!targetSheet || targetRows.length === 0) {
@@ -82,13 +126,15 @@ export async function parseEvidenceFile(file, subMenu = 'SUDAH_K1') {
           return;
         }
 
+        const hmap = buildHeaderMap(targetRows[0]);
+
         // Filter K1 / Potensi K1
         const filtered = targetRows.filter(row => {
           if (subMenu === 'SUDAH_K1') {
-            const v = row['DI208'];
+            const v = getCol(row, hmap, 'DI208');
             return v !== null && v !== '' && v !== undefined && v !== 'null';
           } else {
-            const v = row['DI201B'];
+            const v = getCol(row, hmap, 'DI201B');
             return v !== null && v !== '' && v !== undefined && v !== 'null';
           }
         });
@@ -106,14 +152,14 @@ export async function parseEvidenceFile(file, subMenu = 'SUDAH_K1') {
         const groupMap = {};
 
         filtered.forEach(row => {
-          const desa          = String(row['Desa'] || '').trim().toUpperCase();
-          const kecamatan     = String(row['Kecamatan'] || '').trim();
-          const tglMulai      = toDateStr(row['Tanggal mulai']);
-          const tglPengumuman = toDateStr(row['Tgl DI201B']);
-          const nomorBerkas   = row['Nomor berkas'];
-          const NIB           = row['NIB'];
-          const nama          = row['Nama'];
-          const nik           = row['Nik'] || row['NIK'];
+          const desa          = String(getCol(row, hmap, 'Desa') || '').trim().toUpperCase();
+          const kecamatan     = String(getCol(row, hmap, 'Kecamatan') || '').trim();
+          const tglMulai      = toDateStr(getCol(row, hmap, 'Tanggal mulai', 'Tanggal Mulai'));
+          const tglPengumuman = toDateStr(getCol(row, hmap, 'Tgl DI201B'));
+          const nomorBerkas   = getCol(row, hmap, 'Nomor berkas', 'Nomor Berkas');
+          const NIB           = getCol(row, hmap, 'NIB');
+          const nama          = getCol(row, hmap, 'Nama');
+          const nik           = getCol(row, hmap, 'Nik', 'NIK');
 
           if (!desa || !tglMulai) return; // skip baris tanpa desa atau tanggal
 
