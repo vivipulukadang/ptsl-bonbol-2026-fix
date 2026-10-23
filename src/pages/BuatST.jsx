@@ -440,9 +440,12 @@ export default function BuatST() {
     [f.id_sk_dasar, f.id_desa, f.jenis]
   );
 
-  // Satgas Fisik (Petugas BPN untuk Puldadis) — di-scope ke SK Dasar yang dipilih,
-  // sama seperti Panitia di atas. Susunan Satgas Fisik berubah per SK (lihat
-  // 07b_SATGAS_FISIK_PER_SK), jadi tidak bisa pakai daftar pegawai aktif flat.
+  // Petugas BPN untuk Puldadis — di-scope ke SK Dasar yang dipilih, sama seperti
+  // Panitia di atas. Mencakup SELURUH anggota SK (Panitia + Satgas Fisik + Satgas
+  // Yuridis + Satgas Administrasi), bukan cuma Satgas Fisik — sheet 07b masih
+  // bernama SATGAS_FISIK karena itu tabel pertama yang dibuat, tapi isinya sudah
+  // diperluas ke semua tim per SK. Susunan ini berubah per SK, jadi tidak bisa
+  // pakai daftar pegawai aktif flat.
   const satgasFisikFetch = useFetch(
     getSatgasFisikPerSK,
     f.id_sk_dasar && jenisInfo.butuhPetugas ? { id_sk: f.id_sk_dasar } : {},
@@ -497,8 +500,8 @@ export default function BuatST() {
     label: `${t.ID_Tahapan || t['ID_Tahapan']} — ${t.Nama_Tahapan || t['Nama_Tahapan'] || ''}`,
   }));
 
-  // Petugas BPN (Satgas Fisik) untuk ST Puldadis — di-scope ke SK Dasar terpilih.
-  // Bentuk ulang hasil getSatgasFisikPerSK (ID_Pegawai/Nama_Cache/NIP_Cache/...)
+  // Petugas BPN untuk ST Puldadis — seluruh anggota SK terpilih (Panitia + semua
+  // Satgas), di-scope ke SK Dasar. Bentuk ulang hasil getSatgasFisikPerSK (ID_Pegawai/Nama_Cache/NIP_Cache/...)
   // ke bentuk yang dipakai PetugasMultiSelect (ID_Pegawai/Nama/NIP_Lisensi_SK/...).
   const pegawaiList = (satgasFisikFetch.data || [])
     .slice()
@@ -566,9 +569,9 @@ export default function BuatST() {
         jumlahBidang,
         namaKades: f.nama_kades || namaKades,
         jabatanKades: jabatanKades,
-        // Pakai snapshot dari Satgas Fisik per SK Dasar terpilih (pegawaiList),
-        // bukan master pegawai live — konsisten dengan panitiaFetch yang juga
-        // memakai data _Cache per SK, bukan data pegawai terkini.
+        // Pakai snapshot anggota SK terpilih (pegawaiList), bukan master pegawai
+        // live — konsisten dengan panitiaFetch yang juga memakai data _Cache per
+        // SK, bukan data pegawai terkini.
         petugasList: pegawaiList
           .filter(p => f.petugas_ids.includes(p.ID_Pegawai))
           .map(p => ({
@@ -809,11 +812,11 @@ export default function BuatST() {
           {/* Petugas BPN — hanya untuk Puldadis, di-scope ke SK Dasar terpilih */}
           {jenisInfo.butuhPetugas && (
             <div className="card">
-              <h3 className="font-semibold text-navy mb-3">Petugas BPN * (Satgas Fisik sesuai SK Dasar)</h3>
+              <h3 className="font-semibold text-navy mb-3">Petugas BPN * (sesuai SK Dasar)</h3>
               {!f.id_sk_dasar ? (
-                <p className="text-sm text-gray-400 py-2">Pilih SK Dasar dulu untuk melihat Satgas Fisik yang berlaku.</p>
+                <p className="text-sm text-gray-400 py-2">Pilih SK Dasar dulu untuk melihat anggota yang berlaku.</p>
               ) : satgasFisikFetch.loading ? (
-                <LoadingState message="Memuat Satgas Fisik..." />
+                <LoadingState message="Memuat anggota SK..." />
               ) : satgasFisikFetch.error ? (
                 <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                   ⚠ {satgasFisikFetch.error}. Pastikan action <code>getSatgasFisikPerSK</code> sudah ditambahkan di Apps Script.
