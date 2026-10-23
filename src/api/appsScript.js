@@ -57,6 +57,7 @@ export const getPanitiaPerSK    = (p = {}) => apiGet('getPanitiaPerSK', p);
 export const getKalendar        = (p = {}) => apiGet('getKalendar', p);
 export const getMasterTahapan   = (p = {}) => apiGet('getMasterTahapan', p);
 export const getDesaByTahapan   = (p = {}) => apiGet('getDesaByTahapan', p);
+export const getSatgasFisikPerSK = (p = {}) => apiGet('getSatgasFisikPerSK', p);
 
 // ---- Write handlers (pakai GET untuk hindari CORS) ----
 export const bookTanggalST  = (p) => apiGet('bookTanggalST', p);

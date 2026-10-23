@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import {
-  getMasterDasarSK, getMasterPegawai, getMasterTahapan,
-  getDesaByTahapan, getPanitiaPerSK, getKalendar, getMasterDesa,
+  getMasterDasarSK, getMasterTahapan,
+  getDesaByTahapan, getPanitiaPerSK, getSatgasFisikPerSK, getKalendar, getMasterDesa,
   bookTanggalST, bookNomorST
 } from '../api/appsScript';
 import { LoadingState, ErrorState, PageHeader, Spinner } from '../components/UI';
@@ -369,7 +369,6 @@ function KalenderST({ kalenderData, tglMulai, tglPengumuman, jenisValue, jumlahH
 // ─── Main Component ───────────────────────────────────────────
 export default function BuatST() {
   const allSK      = useFetch(getMasterDasarSK, {});
-  const allPegawai = useFetch(getMasterPegawai, { status: 'Aktif' });
   const tahapan    = useFetch(getMasterTahapan, {});
   const kalender   = useFetch(getKalendar, { tahun: '2026' });
   const masterDesa = useFetch(getMasterDesa, {});
@@ -441,6 +440,15 @@ export default function BuatST() {
     [f.id_sk_dasar, f.id_desa, f.jenis]
   );
 
+  // Satgas Fisik (Petugas BPN untuk Puldadis) — di-scope ke SK Dasar yang dipilih,
+  // sama seperti Panitia di atas. Susunan Satgas Fisik berubah per SK (lihat
+  // 07b_SATGAS_FISIK_PER_SK), jadi tidak bisa pakai daftar pegawai aktif flat.
+  const satgasFisikFetch = useFetch(
+    getSatgasFisikPerSK,
+    f.id_sk_dasar && jenisInfo.butuhPetugas ? { id_sk: f.id_sk_dasar } : {},
+    [f.id_sk_dasar, f.jenis]
+  );
+
   // Bulk options — tiap bulk = 1 baris pilihan (bisa di-join). Diberi index asli.
   const bulkOptions = useMemo(() => {
     if (!evidenceParsed) return [];
@@ -489,9 +497,20 @@ export default function BuatST() {
     label: `${t.ID_Tahapan || t['ID_Tahapan']} — ${t.Nama_Tahapan || t['Nama_Tahapan'] || ''}`,
   }));
 
-  const pegawaiList = (allPegawai.data || []).filter(p =>
-    String(p.Jabatan_dalam_Tim || '') !== ''
-  );
+  // Petugas BPN (Satgas Fisik) untuk ST Puldadis — di-scope ke SK Dasar terpilih.
+  // Bentuk ulang hasil getSatgasFisikPerSK (ID_Pegawai/Nama_Cache/NIP_Cache/...)
+  // ke bentuk yang dipakai PetugasMultiSelect (ID_Pegawai/Nama/NIP_Lisensi_SK/...).
+  const pegawaiList = (satgasFisikFetch.data || [])
+    .slice()
+    .sort((a, b) => Number(a.Urutan) - Number(b.Urutan))
+    .map(p => ({
+      ID_Pegawai: p.ID_Pegawai || p.ID_PSF,
+      Nama: p.Nama_Cache,
+      NIP_Lisensi_SK: p.NIP_Cache,
+      Pangkat_Golongan: p.Pangkat_Cache,
+      Jabatan: p.Jabatan_Struktural_Cache,
+      Jabatan_dalam_Tim: p.Jabatan_dalam_Tim,
+    }));
 
   // ── Submit Step 1 ──
   const handleStep1 = async () => {
@@ -547,7 +566,10 @@ export default function BuatST() {
         jumlahBidang,
         namaKades: f.nama_kades || namaKades,
         jabatanKades: jabatanKades,
-        petugasList: (allPegawai.data || [])
+        // Pakai snapshot dari Satgas Fisik per SK Dasar terpilih (pegawaiList),
+        // bukan master pegawai live — konsisten dengan panitiaFetch yang juga
+        // memakai data _Cache per SK, bukan data pegawai terkini.
+        petugasList: pegawaiList
           .filter(p => f.petugas_ids.includes(p.ID_Pegawai))
           .map(p => ({
             Nama_Cache: p.Nama,
@@ -572,7 +594,7 @@ export default function BuatST() {
     setNoST(''); setIdSTResult(null); setError(null); setSuccessMsg(null);
   };
 
-  if (allSK.loading || allPegawai.loading || tahapan.loading) return <LoadingState />;
+  if (allSK.loading || tahapan.loading) return <LoadingState />;
   if (allSK.error) return <ErrorState message={allSK.error} onRetry={allSK.refetch} />;
 
   return (
@@ -784,15 +806,25 @@ export default function BuatST() {
             )}
           </div>
 
-          {/* Petugas BPN — hanya untuk Puldadis */}
+          {/* Petugas BPN — hanya untuk Puldadis, di-scope ke SK Dasar terpilih */}
           {jenisInfo.butuhPetugas && (
             <div className="card">
-              <h3 className="font-semibold text-navy mb-3">Petugas BPN *</h3>
-              <PetugasMultiSelect
-                pegawaiList={pegawaiList}
-                selected={f.petugas_ids}
-                onChange={v => set('petugas_ids', v)}
-              />
+              <h3 className="font-semibold text-navy mb-3">Petugas BPN * (Satgas Fisik sesuai SK Dasar)</h3>
+              {!f.id_sk_dasar ? (
+                <p className="text-sm text-gray-400 py-2">Pilih SK Dasar dulu untuk melihat Satgas Fisik yang berlaku.</p>
+              ) : satgasFisikFetch.loading ? (
+                <LoadingState message="Memuat Satgas Fisik..." />
+              ) : satgasFisikFetch.error ? (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                  ⚠ {satgasFisikFetch.error}. Pastikan action <code>getSatgasFisikPerSK</code> sudah ditambahkan di Apps Script.
+                </p>
+              ) : (
+                <PetugasMultiSelect
+                  pegawaiList={pegawaiList}
+                  selected={f.petugas_ids}
+                  onChange={v => set('petugas_ids', v)}
+                />
+              )}
             </div>
           )}
 
