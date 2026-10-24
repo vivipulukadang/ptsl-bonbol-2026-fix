@@ -527,14 +527,11 @@ export default function BuatST() {
 
     setSubmitting(true);
     try {
-      const tglMulaiST  = f.tgl_st_list[0];
-      const tglSelesaiST = f.tgl_st_list[f.tgl_st_list.length - 1];
-
       const res = await bookTanggalST({
         kode_jenis_st:           f.jenis,
         id_tahapan:              f.id_tahapan,
         id_sk_dasar:             f.id_sk_dasar,
-        tanggal_st:              tglMulaiST,
+        tanggal_st_list:         JSON.stringify(f.tgl_st_list),
         tgl_mulai_pelaksanaan:   f.tgl_mulai,
         tgl_selesai_pelaksanaan: f.tgl_pengumuman || f.tgl_mulai,
         id_pegawai_list:         JSON.stringify(jenisInfo.butuhPetugas ? f.petugas_ids : []),
